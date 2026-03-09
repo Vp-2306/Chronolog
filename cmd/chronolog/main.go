@@ -2,17 +2,35 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/Vp-2306/Chronolog/internal/memtable"
+	"github.com/Vp-2306/Chronolog/internal/wal"
 )
 
 func main() {
 
-	sl := memtable.NewSkipList()
+	mem := memtable.NewMemTable()
 
-	sl.Insert([]byte("apple"), []byte("10"))
-	sl.Insert([]byte("banana"), []byte("20"))
+	// check if WAL exists
+	if _, err := os.Stat("chronolog.wal"); err == nil {
 
-	value := sl.Search([]byte("apple"))
+		fmt.Println("Recovering from WAL...")
 
-	fmt.Println(string(value))
+		w, _ := wal.NewWAL("chronolog.wal")
+
+		w.Recover(mem)
+
+		w.Close()
+	}
+
+	// open WAL for new writes
+	w, _ := wal.NewWAL("chronolog.wal")
+
+	w.Append([]byte("PUT apple 10\n"))
+	mem.Put([]byte("apple"), []byte("10"))
+
+	val := mem.Get([]byte("apple"))
+
+	fmt.Println("Value:", string(val))
 }
