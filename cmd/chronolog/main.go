@@ -1,9 +1,18 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/Vp-2306/Chronolog/internal/memtable"
+)
 
 func main() {
 
-	fmt.Println("ChronoLog Storage Engine")
+	sl := memtable.NewSkipList()
 
+	sl.Insert([]byte("apple"), []byte("10"))
+	sl.Insert([]byte("banana"), []byte("20"))
+
+	value := sl.Search([]byte("apple"))
+
+	fmt.Println(string(value))
 }
