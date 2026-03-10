@@ -3,6 +3,7 @@ package memtable
 import (
 	"bytes"
 	"math/rand"
+
 )
 
 const MaxLevel = 16
@@ -112,4 +113,26 @@ func (s *SkipList) Insert(key []byte, value []byte) {
 		update[i].forward[i] = newNode
 	}
 }
+
+type Iterator struct{
+	current *Node
+}
+
+func (s *SkipList) NewIterator() *Iterator {
+	return &Iterator{
+		current: s.header.forward[0],
+	}
+}
+
+func (it *Iterator) HasNext() bool {
+	return it.current != nil
+}
+
+func (it *Iterator) Next() ([]byte, []byte){
+	key := it.current.key
+	value := it.current.value
+	it.current = it.current.forward[0]
+	return key,value
+}
+
 

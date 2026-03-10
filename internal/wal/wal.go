@@ -45,9 +45,21 @@ func (w *WAL) Append(record []byte) error {
 }
 
 func (w *WAL) Close() error {
+	if err := w.writer.Flush(); err != nil{
+		return err
+	}
 	return w.file.Close()
 }
 
+func (w *WAL) Truncate() error {
+    if err := w.writer.Flush(); err != nil {
+        return err
+    }
+    if err := w.file.Close(); err != nil {
+        return err
+    }
+    return os.Truncate(w.file.Name(), 0)
+}
 func (w *WAL) Recover(mem *memtable.MemTable) error {
 
 	file, err := os.Open(w.file.Name())
@@ -75,6 +87,8 @@ func (w *WAL) Recover(mem *memtable.MemTable) error {
 
 		if command == "PUT" {
 			mem.Put([]byte(key), []byte(value))
+		} else if command == "DELETE"{
+			mem.Delete([]byte(key))
 		}
 	}
 

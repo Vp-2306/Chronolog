@@ -4,33 +4,26 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Vp-2306/Chronolog/internal/memtable"
-	"github.com/Vp-2306/Chronolog/internal/wal"
+	chronolog "github.com/Vp-2306/Chronolog"
 )
 
 func main() {
 
-	mem := memtable.NewMemTable()
-
-	// check if WAL exists
-	if _, err := os.Stat("chronolog.wal"); err == nil {
-
-		fmt.Println("Recovering from WAL...")
-
-		w, _ := wal.NewWAL("chronolog.wal")
-
-		w.Recover(mem)
-
-		w.Close()
+	engine, err := chronolog.NewEngine("chronolog.wal")
+	if err != nil {
+		fmt.Println("Error starting engine:", err)
+		os.Exit(1)
 	}
+	defer engine.Close()
 
-	// open WAL for new writes
-	w, _ := wal.NewWAL("chronolog.wal")
+	engine.Put([]byte("apple"), []byte("10"))
+	engine.Put([]byte("banana"), []byte("20"))
+	engine.Put([]byte("cherry"), []byte("30"))
 
-	w.Append([]byte("PUT apple 10\n"))
-	mem.Put([]byte("apple"), []byte("10"))
-
-	val := mem.Get([]byte("apple"))
-
-	fmt.Println("Value:", string(val))
+	val, err := engine.Get([]byte("apple"))
+	if err != nil {
+		fmt.Println("Error:", err)
+	} else {
+		fmt.Println("apple:", string(val))
+	}
 }
