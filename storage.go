@@ -115,11 +115,10 @@ func (e *Engine) flush() error {
 }
 
 func (e *Engine) Close() error {
-	
-	// flush remaining memtable data before closing
-	if err := e.flush(); err != nil {
-		return err
+	if e.mem.HasData() && e.mem.ShouldFlush() {
+		if err := e.flush(); err != nil {
+			return err
+		}
 	}
-
 	return e.wal.Close()
 }

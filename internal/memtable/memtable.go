@@ -55,3 +55,9 @@ func (m *MemTable) NewIterator() *Iterator {
 
 	return m.list.NewIterator()
 }
+
+func (m *MemTable) HasData() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.size > 0
+}
