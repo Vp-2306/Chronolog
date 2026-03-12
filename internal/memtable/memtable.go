@@ -2,7 +2,7 @@ package memtable
 
 import "sync"
 
-const MaxSize = 4 * 1024 * 1024 // 4MB
+const MaxSize = 1 // 4MB
 
 type MemTable struct{
 	list *SkipList

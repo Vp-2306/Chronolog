@@ -3,6 +3,7 @@ package chronolog
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/Vp-2306/Chronolog/internal/memtable"
 	"github.com/Vp-2306/Chronolog/internal/sstable"
@@ -12,11 +13,17 @@ import (
 type Engine struct {
 	mem *memtable.MemTable
 	wal *wal.WAL
+	sstables []string
 }
 
 func NewEngine(walPath string) (*Engine, error) {
 
 	mem := memtable.NewMemTable()
+
+	sstables, err := loadSSTables()
+	if err != nil {
+		return nil, err
+	}
 
 	// recover from WAL if it exists
 	if _, err := os.Stat(walPath); err == nil {
@@ -35,6 +42,10 @@ func NewEngine(walPath string) (*Engine, error) {
 		if err := w.Truncate(); err != nil {
 			return nil, err
 		}
+
+		if err := w.Close(); err != nil {
+			return nil, err
+		}
 	}
 
 	w, err := wal.NewWAL(walPath)
@@ -45,7 +56,30 @@ func NewEngine(walPath string) (*Engine, error) {
 	return &Engine{
 		mem: mem,
 		wal: w,
+		sstables: sstables,
 	}, nil
+}
+
+func loadSSTables() ([]string, error) {
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		return nil, err
+	}
+
+	var files []string
+
+	for _, entry := range entries {
+		if !entry.IsDir() && len(entry.Name()) > 4 &&
+			entry.Name()[len(entry.Name())-4:] == ".sst" {
+			files = append(files, entry.Name())
+		}
+	}
+
+	// sort newest first
+	sort.Sort(sort.Reverse(sort.StringSlice(files)))
+
+	return files, nil
 }
 
 func (e *Engine) Put(key []byte, value []byte) error {
@@ -71,14 +105,30 @@ func (e *Engine) Put(key []byte, value []byte) error {
 
 func (e *Engine) Get(key []byte) ([]byte, error) {
 
+	// check memtable first
 	val := e.mem.Get(key)
-
 	if val != nil {
 		return val, nil
 	}
 
+	// search SSTables newest first
+	for _, filename := range e.sstables {
+		value, found, err := sstable.ReadSSTable(filename, key)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			// nil value means tombstone — key was deleted
+			if value == nil {
+				return nil, fmt.Errorf("key not found")
+			}
+			return value, nil
+		}
+	}
+
 	return nil, fmt.Errorf("key not found")
 }
+
 
 func (e *Engine) Delete(key []byte) error {
 
@@ -103,10 +153,13 @@ func (e *Engine) flush() error {
 
 	fmt.Println("SSTable written:", filename)
 
-	// reset memtable after flush
+	// add new SSTable to front of list — newest first
+	e.sstables = append([]string{filename}, e.sstables...)
+
+	// reset memtable
 	e.mem = memtable.NewMemTable()
 
-	// truncate WAL since memtable is now on disk
+	// truncate WAL
 	if err := e.wal.Truncate(); err != nil {
 		return err
 	}

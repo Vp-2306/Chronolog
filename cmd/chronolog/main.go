@@ -26,4 +26,11 @@ func main() {
 	} else {
 		fmt.Println("apple:", string(val))
 	}
+
+	val, err = engine.Get([]byte("banana"))
+	if err != nil {
+		fmt.Println("Error:", err)
+	} else {
+		fmt.Println("banana:", string(val))
+	}
 }
