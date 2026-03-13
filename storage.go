@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/Vp-2306/Chronolog/internal/bloom"
 	"github.com/Vp-2306/Chronolog/internal/memtable"
 	"github.com/Vp-2306/Chronolog/internal/sstable"
 	"github.com/Vp-2306/Chronolog/internal/wal"
@@ -14,6 +15,7 @@ type Engine struct {
 	mem *memtable.MemTable
 	wal *wal.WAL
 	sstables []string
+	filters map[string]*bloom.BloomFilter
 }
 
 func NewEngine(walPath string) (*Engine, error) {
@@ -57,6 +59,7 @@ func NewEngine(walPath string) (*Engine, error) {
 		mem: mem,
 		wal: w,
 		sstables: sstables,
+		filters: make(map[string]*bloom.BloomFilter),
 	}, nil
 }
 
@@ -113,6 +116,16 @@ func (e *Engine) Get(key []byte) ([]byte, error) {
 
 	// search SSTables newest first
 	for _, filename := range e.sstables {
+		
+		//check bloom filter first
+		if filter, ok := e.filters[filename]; ok{
+			if !filter.MightContain(key) {
+				//definitely not in this file - skip it 
+				fmt.Println("Bloom filter skipped:", filename)
+				continue
+			}
+		}
+
 		value, found, err := sstable.ReadSSTable(filename, key)
 		if err != nil {
 			return nil, err
@@ -146,12 +159,15 @@ func (e *Engine) flush() error {
 
 	fmt.Println("Flushing memtable to SSTable...")
 
-	filename, err := sstable.WriteSSTable(e.mem)
+	filename, filter, err := sstable.WriteSSTable(e.mem)
 	if err != nil {
 		return err
 	}
 
 	fmt.Println("SSTable written:", filename)
+
+	//store bloom filter for this SSTable
+	e.filters[filename] = filter
 
 	// add new SSTable to front of list — newest first
 	e.sstables = append([]string{filename}, e.sstables...)

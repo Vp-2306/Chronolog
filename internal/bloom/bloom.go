@@ -1,13 +1,13 @@
 	package bloom
 
-	import {
+	import (
 		"hash/fnv"
-	}
+	)
 
-	const{
+	const(
 		arraySize = 1024
 		numHashes = 3
-	}
+	)
 
 	type BloomFilter struct {
 		bits []bool

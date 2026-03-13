@@ -5,19 +5,26 @@ import (
 	"fmt"
 	"os"
 	"time"
-
+	"github.com/Vp-2306/Chronolog/internal/bloom"
 	"github.com/Vp-2306/Chronolog/internal/memtable"
 )
 
-func WriteSSTable(mem *memtable.MemTable) (string, error) {
+type SSTableWriter struct{
+	filter *bloom.BloomFilter
+}
+
+
+func WriteSSTable(mem *memtable.MemTable) (string, *bloom.BloomFilter, error) {
 
 	filename := fmt.Sprintf("%d.sst", time.Now().UnixNano())
 
 	file, err := os.Create(filename)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer file.Close()
+
+	filter := bloom.NewBloomFilter()
 
 	iter := mem.NewIterator()
 
@@ -30,28 +37,31 @@ func WriteSSTable(mem *memtable.MemTable) (string, error) {
 			continue
 		}
 
+		//add key to bloom filter
+		filter.Add(key)
+
 		// write key length
 		keyLen := uint32(len(key))
 		if err := binary.Write(file, binary.LittleEndian, keyLen); err != nil {
-			return "", err
+			return "", nil, err
 		}
 
 		// write key
 		if _, err := file.Write(key); err != nil {
-			return "", err
+			return "", nil, err
 		}
 
 		// write value length
 		valLen := uint32(len(value))
 		if err := binary.Write(file, binary.LittleEndian, valLen); err != nil {
-			return "", err
+			return "", nil, err
 		}
 
 		// write value
 		if _, err := file.Write(value); err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
 
-	return filename, nil
+	return filename, filter, nil
 }
