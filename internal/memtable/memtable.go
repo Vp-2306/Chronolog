@@ -2,7 +2,7 @@ package memtable
 
 import "sync"
 
-const MaxSize = 1 // 4MB
+const MaxSize = 64 * 1024 // 4MB
 
 type MemTable struct{
 	list *SkipList
@@ -60,4 +60,10 @@ func (m *MemTable) HasData() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.size > 0
+}
+
+func (m *MemTable) Size() int {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    return m.size
 }

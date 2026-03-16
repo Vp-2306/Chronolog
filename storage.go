@@ -1,21 +1,28 @@
 package chronolog
 
 import (
+	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/Vp-2306/Chronolog/internal/bloom"
+	"github.com/Vp-2306/Chronolog/internal/compaction"
 	"github.com/Vp-2306/Chronolog/internal/memtable"
+	"github.com/Vp-2306/Chronolog/internal/metrics"
 	"github.com/Vp-2306/Chronolog/internal/sstable"
 	"github.com/Vp-2306/Chronolog/internal/wal"
 )
 
+const maxLevel0Files = 4
+
 type Engine struct {
-	mem *memtable.MemTable
-	wal *wal.WAL
+	mem      *memtable.MemTable
+	wal      *wal.WAL
 	sstables []string
-	filters map[string]*bloom.BloomFilter
+	filters  map[string]*bloom.BloomFilter
 }
 
 func NewEngine(walPath string) (*Engine, error) {
@@ -27,7 +34,6 @@ func NewEngine(walPath string) (*Engine, error) {
 		return nil, err
 	}
 
-	// recover from WAL if it exists
 	if _, err := os.Stat(walPath); err == nil {
 
 		fmt.Println("Recovering from WAL...")
@@ -56,10 +62,10 @@ func NewEngine(walPath string) (*Engine, error) {
 	}
 
 	return &Engine{
-		mem: mem,
-		wal: w,
+		mem:      mem,
+		wal:      w,
 		sstables: sstables,
-		filters: make(map[string]*bloom.BloomFilter),
+		filters:  make(map[string]*bloom.BloomFilter),
 	}, nil
 }
 
@@ -79,7 +85,6 @@ func loadSSTables() ([]string, error) {
 		}
 	}
 
-	// sort newest first
 	sort.Sort(sort.Reverse(sort.StringSlice(files)))
 
 	return files, nil
@@ -87,51 +92,57 @@ func loadSSTables() ([]string, error) {
 
 func (e *Engine) Put(key []byte, value []byte) error {
 
-	// write to WAL first
+	start := time.Now()
+
 	record := fmt.Sprintf("PUT %s %s\n", key, value)
 	if err := e.wal.Append([]byte(record)); err != nil {
 		return err
 	}
 
-	// write to memtable
 	e.mem.Put(key, value)
 
-	// check if memtable needs flushing
+	// update memtable size metric
+	metrics.Global.UpdateMemTableSize(int64(e.mem.Size()))
+
 	if e.mem.ShouldFlush() {
 		if err := e.flush(); err != nil {
 			return err
 		}
 	}
 
+	// record write latency
+	metrics.Global.RecordWrite(time.Since(start))
+
 	return nil
 }
 
 func (e *Engine) Get(key []byte) ([]byte, error) {
 
-	// check memtable first
+	start := time.Now()
+
 	val := e.mem.Get(key)
 	if val != nil {
+		metrics.Global.RecordRead(time.Since(start))
 		return val, nil
 	}
 
-	// search SSTables newest first
 	for _, filename := range e.sstables {
-		
-		//check bloom filter first
-		if filter, ok := e.filters[filename]; ok{
+
+		if filter, ok := e.filters[filename]; ok {
 			if !filter.MightContain(key) {
-				//definitely not in this file - skip it 
-				fmt.Println("Bloom filter skipped:", filename)
+				metrics.Global.RecordBloomHit()
 				continue
 			}
 		}
+
+		metrics.Global.RecordBloomMiss()
 
 		value, found, err := sstable.ReadSSTable(filename, key)
 		if err != nil {
 			return nil, err
 		}
 		if found {
-			// nil value means tombstone — key was deleted
+			metrics.Global.RecordRead(time.Since(start))
 			if value == nil {
 				return nil, fmt.Errorf("key not found")
 			}
@@ -139,9 +150,9 @@ func (e *Engine) Get(key []byte) ([]byte, error) {
 		}
 	}
 
+	metrics.Global.RecordRead(time.Since(start))
 	return nil, fmt.Errorf("key not found")
 }
-
 
 func (e *Engine) Delete(key []byte) error {
 
@@ -151,6 +162,7 @@ func (e *Engine) Delete(key []byte) error {
 	}
 
 	e.mem.Delete(key)
+	metrics.Global.RecordDelete()
 
 	return nil
 }
@@ -166,21 +178,91 @@ func (e *Engine) flush() error {
 
 	fmt.Println("SSTable written:", filename)
 
-	//store bloom filter for this SSTable
 	e.filters[filename] = filter
-
-	// add new SSTable to front of list — newest first
 	e.sstables = append([]string{filename}, e.sstables...)
-
-	// reset memtable
 	e.mem = memtable.NewMemTable()
 
-	// truncate WAL
+	metrics.Global.RecordFlush()
+	metrics.Global.UpdateMemTableSize(0)
+
 	if err := e.wal.Truncate(); err != nil {
 		return err
 	}
 
+	if len(e.sstables) >= maxLevel0Files {
+		if err := e.compact(); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func (e *Engine) compact() error {
+
+	filesRemoved := int64(len(e.sstables))
+
+	newFile, err := compaction.Compact(e.sstables)
+	if err != nil {
+		return err
+	}
+
+	for _, filename := range e.sstables {
+		delete(e.filters, filename)
+	}
+
+	e.sstables = []string{newFile}
+
+	newFilter, err := buildFilter(newFile)
+	if err != nil {
+		return err
+	}
+
+	e.filters[newFile] = newFilter
+
+	metrics.Global.RecordCompaction(filesRemoved)
+
+	return nil
+}
+
+func buildFilter(filename string) (*bloom.BloomFilter, error) {
+
+	filter := bloom.NewBloomFilter()
+
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	for {
+		var keyLen uint32
+		if err := binary.Read(file, binary.LittleEndian, &keyLen); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+
+		key := make([]byte, keyLen)
+		if _, err := io.ReadFull(file, key); err != nil {
+			return nil, err
+		}
+
+		filter.Add(key)
+
+		var valLen uint32
+		if err := binary.Read(file, binary.LittleEndian, &valLen); err != nil {
+			return nil, err
+		}
+
+		value := make([]byte, valLen)
+		if _, err := io.ReadFull(file, value); err != nil {
+			return nil, err
+		}
+	}
+
+	return filter, nil
 }
 
 func (e *Engine) Close() error {

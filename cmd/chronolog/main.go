@@ -5,6 +5,7 @@ import (
 	"os"
 
 	chronolog "github.com/Vp-2306/Chronolog"
+	"github.com/Vp-2306/Chronolog/internal/server"
 )
 
 func main() {
@@ -16,21 +17,9 @@ func main() {
 	}
 	defer engine.Close()
 
-	engine.Put([]byte("apple"), []byte("10"))
-	engine.Put([]byte("banana"), []byte("20"))
-	engine.Put([]byte("cherry"), []byte("30"))
-
-	val, err := engine.Get([]byte("apple"))
-	if err != nil {
-		fmt.Println("Error:", err)
-	} else {
-		fmt.Println("apple:", string(val))
-	}
-
-	val, err = engine.Get([]byte("banana"))
-	if err != nil {
-		fmt.Println("Error:", err)
-	} else {
-		fmt.Println("banana:", string(val))
+	s := server.NewServer(engine, "8080")
+	if err := s.Start(); err != nil {
+		fmt.Println("Server error:", err)
+		os.Exit(1)
 	}
 }

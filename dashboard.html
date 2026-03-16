@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChronoLog — Storage Engine Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #050810;
+    --bg2: #080d1a;
+    --bg3: #0d1525;
+    --panel: #0a1020;
+    --border: #1a2a4a;
+    --accent: #00e5ff;
+    --accent2: #ff6b35;
+    --accent3: #39ff14;
+    --accent4: #bf5fff;
+    --text: #c8d8f0;
+    --text-dim: #4a6080;
+    --text-bright: #e8f4ff;
+    --danger: #ff2d55;
+    --warn: #ffcc00;
+    --mono: 'Share Tech Mono', monospace;
+    --display: 'Rajdhani', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 20%, rgba(0,229,255,0.04) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 80%, rgba(191,95,255,0.04) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* scanline effect */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .wrap { position: relative; z-index: 2; }
+
+  /* ── HEADER ── */
+  header {
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(8,13,26,0.95);
+    backdrop-filter: blur(8px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .logo-mark {
+    font-family: var(--display);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--text-bright);
+    text-transform: uppercase;
+  }
+
+  .logo-mark span {
+    color: var(--accent);
+    text-shadow: 0 0 20px var(--accent);
+  }
+
+  .logo-sub {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent3);
+    box-shadow: 0 0 12px var(--accent3);
+    animation: pulse 2s infinite;
+  }
+
+  .status-dot.offline { background: var(--danger); box-shadow: 0 0 12px var(--danger); animation: none; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .status-label { font-size: 11px; color: var(--text-dim); letter-spacing: 2px; }
+
+  /* ── LAYOUT ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    padding: 0;
+  }
+
+  .main-layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 1px;
+    background: var(--border);
+    min-height: calc(100vh - 70px);
+  }
+
+  .left-col { background: var(--bg); display: flex; flex-direction: column; gap: 1px; }
+  .right-col { background: var(--border); display: flex; flex-direction: column; gap: 1px; }
+
+  /* ── PANELS ── */
+  .panel {
+    background: var(--panel);
+    padding: 20px 24px;
+  }
+
+  .panel-title {
+    font-family: var(--display);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-title::before {
+    content: '';
+    width: 3px;
+    height: 14px;
+    background: var(--accent);
+    display: block;
+  }
+
+  /* ── STAT CARDS ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+  }
+
+  .stat-card {
+    background: var(--panel);
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.4s ease;
+  }
+
+  .stat-card:hover::after { transform: scaleX(1); }
+
+  .stat-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-family: var(--display);
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text-bright);
+    line-height: 1;
+    transition: color 0.3s;
+  }
+
+  .stat-value.updated { color: var(--accent); }
+
+  .stat-sub {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* ── CHART ── */
+  .chart-container {
+    position: relative;
+    height: 160px;
+  }
+
+  canvas { display: block; }
+
+  /* ── OPERATION FORM ── */
+  .op-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .input-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    width: 40px;
+    flex-shrink: 0;
+  }
+
+  input[type="text"] {
+    flex: 1;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text-bright);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input[type="text"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(0,229,255,0.2);
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .btn {
+    flex: 1;
+    padding: 9px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border: 1px solid;
+    background: transparent;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: currentColor;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .btn:hover::before { opacity: 0.1; }
+  .btn:active::before { opacity: 0.2; }
+
+  .btn-put { color: var(--accent3); border-color: var(--accent3); }
+  .btn-get { color: var(--accent); border-color: var(--accent); }
+  .btn-del { color: var(--danger); border-color: var(--danger); }
+
+  .result-box {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    min-height: 40px;
+    font-size: 12px;
+    color: var(--accent);
+    word-break: break-all;
+    transition: border-color 0.3s;
+  }
+
+  .result-box.error { color: var(--danger); border-color: var(--danger); }
+  .result-box.success { border-color: var(--accent3); }
+
+  /* ── LSM FLOW ── */
+  .flow-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: stretch;
+  }
+
+  .flow-node {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: border-color 0.3s, background 0.3s;
+  }
+
+  .flow-node.active {
+    border-color: var(--accent);
+    background: rgba(0,229,255,0.05);
+  }
+
+  .flow-node.active .flow-dot {
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+  }
+
+  .flow-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+    transition: all 0.3s;
+  }
+
+  .flow-name {
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--text-bright);
+  }
+
+  .flow-desc {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-left: auto;
+  }
+
+  .flow-arrow {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 10px;
+    padding: 0;
+    letter-spacing: 2px;
+  }
+
+  /* ── BENCHMARK ── */
+  .bench-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .bench-item {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    padding: 12px;
+  }
+
+  .bench-name {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .bench-bar-wrap {
+    height: 6px;
+    background: var(--bg);
+    margin-bottom: 6px;
+    overflow: hidden;
+  }
+
+  .bench-bar {
+    height: 100%;
+    transition: width 0.8s ease;
+  }
+
+  .bench-val {
+    font-family: var(--display);
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  .bench-unit {
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .bench-run-btn {
+    width: 100%;
+    padding: 10px;
+    background: transparent;
+    border: 1px solid var(--accent4);
+    color: var(--accent4);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 14px;
+  }
+
+  .bench-run-btn:hover {
+    background: rgba(191,95,255,0.1);
+    box-shadow: 0 0 20px rgba(191,95,255,0.2);
+  }
+
+  .bench-run-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ── LOG ── */
+  .log-box {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    height: 140px;
+    overflow-y: auto;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
+  .log-box::-webkit-scrollbar { width: 4px; }
+  .log-box::-webkit-scrollbar-track { background: transparent; }
+  .log-box::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .log-entry {
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(26,42,74,0.5);
+    display: flex;
+    gap: 8px;
+  }
+
+  .log-time { color: var(--text-dim); flex-shrink: 0; }
+  .log-msg { color: var(--text); }
+  .log-msg.ok { color: var(--accent3); }
+  .log-msg.err { color: var(--danger); }
+  .log-msg.info { color: var(--accent); }
+  .log-msg.warn { color: var(--warn); }
+
+  /* ── BLOOM METER ── */
+  .bloom-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .bloom-label-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+  }
+
+  .bloom-track {
+    height: 20px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+  }
+
+  .bloom-hits {
+    background: linear-gradient(90deg, var(--accent3), rgba(57,255,20,0.6));
+    transition: width 0.6s ease;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 6px;
+    font-size: 9px;
+    color: var(--bg);
+    font-weight: bold;
+    min-width: 0;
+  }
+
+  .bloom-misses {
+    background: linear-gradient(90deg, rgba(255,45,85,0.6), var(--danger));
+    flex: 1;
+  }
+
+  /* ── MINI LATENCY BARS ── */
+  .lat-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(26,42,74,0.4);
+  }
+
+  .lat-label { width: 100px; font-size: 10px; color: var(--text-dim); }
+
+  .lat-bar-wrap {
+    flex: 1;
+    height: 8px;
+    background: var(--bg3);
+    overflow: hidden;
+  }
+
+  .lat-bar {
+    height: 100%;
+    transition: width 0.5s ease;
+  }
+
+  .lat-val { width: 80px; text-align: right; font-size: 11px; }
+
+  /* ── SPARKLINE ── */
+  .sparkline-wrap {
+    height: 60px;
+    position: relative;
+  }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .panel { animation: fadeIn 0.4s ease both; }
+
+  @keyframes glow {
+    0%, 100% { text-shadow: 0 0 10px currentColor; }
+    50% { text-shadow: 0 0 25px currentColor, 0 0 50px currentColor; }
+  }
+
+  .glowing { animation: glow 3s infinite; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <div class="logo-mark"><span>Chrono</span>Log</div>
+      <div class="logo-sub">LSM Storage Engine</div>
+    </div>
+    <div class="header-right">
+      <div id="statusLabel" class="status-label">CONNECTING...</div>
+      <div id="statusDot" class="status-dot offline"></div>
+    </div>
+  </header>
+
+  <!-- STAT CARDS ROW -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Total Writes</div>
+      <div class="stat-value" id="totalWrites">0</div>
+      <div class="stat-sub">operations</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Reads</div>
+      <div class="stat-value" id="totalReads">0</div>
+      <div class="stat-sub">operations</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">SSTables</div>
+      <div class="stat-value" id="sstableCount">0</div>
+      <div class="stat-sub">files on disk</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Compactions</div>
+      <div class="stat-value" id="totalCompactions">0</div>
+      <div class="stat-sub">triggered</div>
+    </div>
+  </div>
+
+  <!-- MAIN LAYOUT -->
+  <div class="main-layout">
+
+    <!-- LEFT COLUMN -->
+    <div class="left-col">
+
+      <!-- LATENCY PANEL -->
+      <div class="panel">
+        <div class="panel-title">Operation Latency</div>
+        <div class="lat-row">
+          <div class="lat-label">Avg Write</div>
+          <div class="lat-bar-wrap">
+            <div class="lat-bar" id="writeBar" style="width:0%;background:var(--accent3)"></div>
+          </div>
+          <div class="lat-val" id="writeLatVal" style="color:var(--accent3)">—</div>
+        </div>
+        <div class="lat-row">
+          <div class="lat-label">Avg Read</div>
+          <div class="lat-bar-wrap">
+            <div class="lat-bar" id="readBar" style="width:0%;background:var(--accent)"></div>
+          </div>
+          <div class="lat-val" id="readLatVal" style="color:var(--accent)">—</div>
+        </div>
+        <div style="margin-top:16px">
+          <div class="panel-title">Write Latency History</div>
+          <div class="chart-container">
+            <canvas id="latencyChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- BLOOM FILTER PANEL -->
+      <div class="panel">
+        <div class="panel-title">Bloom Filter Efficiency</div>
+        <div class="bloom-wrap">
+          <div class="bloom-label-row">
+            <span style="color:var(--accent3)">■ Files Skipped (HITS)</span>
+            <span style="color:var(--danger)">■ Files Opened (MISSES)</span>
+          </div>
+          <div class="bloom-track">
+            <div class="bloom-hits" id="bloomHitsBar" style="width:0%"></div>
+            <div class="bloom-misses" id="bloomMissBar"></div>
+          </div>
+          <div class="bloom-label-row">
+            <span id="bloomHitsVal">0 hits</span>
+            <span id="bloomRateVal" style="color:var(--accent);font-family:var(--display);font-size:18px;font-weight:700">0%</span>
+            <span id="bloomMissVal">0 misses</span>
+          </div>
+        </div>
+        <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);font-size:11px;color:var(--text-dim)">
+          Bloom filters allow ChronoLog to skip SSTable files during reads without opening them.
+          Higher hit rate = fewer disk reads = faster queries.
+        </div>
+      </div>
+
+      <!-- BENCHMARK PANEL -->
+      <div class="panel">
+        <div class="panel-title">Performance Benchmark vs Map</div>
+        <button class="bench-run-btn" id="benchBtn" onclick="runBenchmark()">
+          ▶ Run Benchmark (1000 ops)
+        </button>
+        <div class="bench-grid" id="benchResults">
+          <div class="bench-item">
+            <div class="bench-name" style="color:var(--accent3)">ChronoLog Write</div>
+            <div class="bench-bar-wrap"><div class="bench-bar" id="cwBar" style="width:0%;background:var(--accent3)"></div></div>
+            <div class="bench-val" id="cwVal" style="color:var(--accent3)">—</div>
+            <div class="bench-unit">µs avg latency</div>
+          </div>
+          <div class="bench-item">
+            <div class="bench-name" style="color:var(--text-dim)">Map Write</div>
+            <div class="bench-bar-wrap"><div class="bench-bar" id="mwBar" style="width:0%;background:var(--text-dim)"></div></div>
+            <div class="bench-val" id="mwVal" style="color:var(--text-dim)">—</div>
+            <div class="bench-unit">µs avg latency</div>
+          </div>
+          <div class="bench-item">
+            <div class="bench-name" style="color:var(--accent)">ChronoLog Read</div>
+            <div class="bench-bar-wrap"><div class="bench-bar" id="crBar" style="width:0%;background:var(--accent)"></div></div>
+            <div class="bench-val" id="crVal" style="color:var(--accent)">—</div>
+            <div class="bench-unit">µs avg latency</div>
+          </div>
+          <div class="bench-item">
+            <div class="bench-name" style="color:var(--text-dim)">Map Read</div>
+            <div class="bench-bar-wrap"><div class="bench-bar" id="mrBar" style="width:0%;background:var(--text-dim)"></div></div>
+            <div class="bench-val" id="mrVal" style="color:var(--text-dim)">—</div>
+            <div class="bench-unit">µs avg latency</div>
+          </div>
+        </div>
+        <div id="benchSummary" style="margin-top:10px;font-size:10px;color:var(--text-dim);line-height:1.8"></div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="right-col">
+
+      <!-- OPERATIONS PANEL -->
+      <div class="panel">
+        <div class="panel-title">Operations</div>
+        <div class="op-form">
+          <div class="input-row">
+            <div class="input-label">KEY</div>
+            <input type="text" id="opKey" placeholder="enter key..." />
+          </div>
+          <div class="input-row">
+            <div class="input-label">VALUE</div>
+            <input type="text" id="opValue" placeholder="enter value..." />
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-put" onclick="doPut()">PUT</button>
+            <button class="btn btn-get" onclick="doGet()">GET</button>
+            <button class="btn btn-del" onclick="doDelete()">DEL</button>
+          </div>
+          <div class="result-box" id="opResult">awaiting operation...</div>
+        </div>
+      </div>
+
+      <!-- LSM FLOW DIAGRAM -->
+      <div class="panel">
+        <div class="panel-title">Write Path</div>
+        <div class="flow-diagram">
+          <div class="flow-node" id="flow-client">
+            <div class="flow-dot"></div>
+            <div>
+              <div class="flow-name">CLIENT</div>
+            </div>
+            <div class="flow-desc">PUT / GET / DELETE</div>
+          </div>
+          <div class="flow-arrow">↓ write</div>
+          <div class="flow-node" id="flow-wal">
+            <div class="flow-dot"></div>
+            <div>
+              <div class="flow-name">WRITE AHEAD LOG</div>
+            </div>
+            <div class="flow-desc">durability</div>
+          </div>
+          <div class="flow-arrow">↓ insert</div>
+          <div class="flow-node" id="flow-mem">
+            <div class="flow-dot"></div>
+            <div>
+              <div class="flow-name">MEMTABLE</div>
+            </div>
+            <div class="flow-desc" id="memSizeLabel">SkipList — 0 B</div>
+          </div>
+          <div class="flow-arrow">↓ flush at 4MB</div>
+          <div class="flow-node" id="flow-sst">
+            <div class="flow-dot"></div>
+            <div>
+              <div class="flow-name">SSTABLE</div>
+            </div>
+            <div class="flow-desc" id="sstCountLabel">0 files</div>
+          </div>
+          <div class="flow-arrow">↓ every 4 files</div>
+          <div class="flow-node" id="flow-compact">
+            <div class="flow-dot"></div>
+            <div>
+              <div class="flow-name">COMPACTION</div>
+            </div>
+            <div class="flow-desc" id="compactLabel">0 runs</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LIVE LOG -->
+      <div class="panel" style="flex:1">
+        <div class="panel-title">Event Log</div>
+        <div class="log-box" id="logBox"></div>
+      </div>
+
+      <!-- MEMTABLE SIZE -->
+      <div class="panel">
+        <div class="panel-title">MemTable Size</div>
+        <div style="height:8px;background:var(--bg3);border:1px solid var(--border);overflow:hidden;margin-bottom:8px">
+          <div id="memBar" style="height:100%;background:linear-gradient(90deg,var(--accent3),var(--accent));width:0%;transition:width 0.5s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim)">
+          <span id="memSizeVal">0 B</span>
+          <span>/ 4 MB threshold</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = 'http://localhost:8080';
+
+// latency history for chart
+const writeHistory = new Array(40).fill(0);
+const readHistory = new Array(40).fill(0);
+
+// ── CANVAS CHART ──
+const canvas = document.getElementById('latencyChart');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width;
+  canvas.height = rect.height;
+}
+
+function drawChart() {
+  resizeCanvas();
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const all = [...writeHistory, ...readHistory];
+  const maxVal = Math.max(...all, 1);
+
+  // grid lines
+  ctx.strokeStyle = 'rgba(26,42,74,0.6)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = (h / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  function drawLine(data, color) {
+    if (data.every(v => v === 0)) return;
+    const stepX = w / (data.length - 1);
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+    data.forEach((val, i) => {
+      const x = i * stepX;
+      const y = h - (val / maxVal) * (h - 10) - 5;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // fill
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    ctx.shadowBlur = 0;
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, color.replace(')', ',0.15)').replace('rgb', 'rgba'));
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+
+  drawLine(writeHistory, '#39ff14');
+  drawLine(readHistory, '#00e5ff');
+}
+
+// ── HELPERS ──
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(2) + ' MB';
+}
+
+function formatNs(ns) {
+  if (ns < 1000) return ns + ' ns';
+  if (ns < 1000000) return (ns/1000).toFixed(1) + ' µs';
+  return (ns/1000000).toFixed(2) + ' ms';
+}
+
+function addLog(msg, type='') {
+  const box = document.getElementById('logBox');
+  const now = new Date().toTimeString().slice(0,8);
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML = `<span class="log-time">${now}</span><span class="log-msg ${type}">${msg}</span>`;
+  box.prepend(entry);
+  while (box.children.length > 50) box.removeChild(box.lastChild);
+}
+
+function setVal(id, val, flash=false) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = val;
+  if (flash) {
+    el.classList.add('updated');
+    setTimeout(() => el.classList.remove('updated'), 600);
+  }
+}
+
+// ── METRICS POLLING ──
+let prevWrites = 0, prevReads = 0;
+
+async function fetchMetrics() {
+  try {
+    const res = await fetch(BASE + '/metrics');
+    if (!res.ok) throw new Error('not ok');
+    const d = await res.json();
+
+    document.getElementById('statusDot').className = 'status-dot';
+    document.getElementById('statusLabel').textContent = 'ONLINE';
+
+    const wrFlash = d.total_writes !== prevWrites;
+    const rdFlash = d.total_reads !== prevReads;
+    prevWrites = d.total_writes;
+    prevReads = d.total_reads;
+
+    setVal('totalWrites', d.total_writes, wrFlash);
+    setVal('totalReads', d.total_reads, rdFlash);
+    setVal('sstableCount', d.sstable_count);
+    setVal('totalCompactions', d.total_compactions);
+
+    // latency
+    const wlNs = d.avg_write_latency_ns || 0;
+    const rlNs = d.avg_read_latency_ns || 0;
+    setVal('writeLatVal', formatNs(wlNs));
+    setVal('readLatVal', formatNs(rlNs));
+
+    const wlUs = wlNs / 1000;
+    const rlUs = rlNs / 1000;
+    const maxLat = Math.max(wlUs, rlUs, 1);
+    document.getElementById('writeBar').style.width = Math.min((wlUs/maxLat)*100, 100) + '%';
+    document.getElementById('readBar').style.width = Math.min((rlUs/maxLat)*100, 100) + '%';
+
+    // history
+    writeHistory.push(wlUs); writeHistory.shift();
+    readHistory.push(rlUs); readHistory.shift();
+    drawChart();
+
+    // bloom
+    const hits = d.bloom_filter_hits || 0;
+    const misses = d.bloom_filter_misses || 0;
+    const total = hits + misses;
+    const rate = total > 0 ? ((hits/total)*100).toFixed(1) : '0';
+    const hitPct = total > 0 ? (hits/total)*100 : 0;
+    document.getElementById('bloomHitsBar').style.width = hitPct + '%';
+    setVal('bloomHitsVal', hits + ' hits');
+    setVal('bloomMissVal', misses + ' misses');
+    setVal('bloomRateVal', rate + '%');
+
+    // memtable
+    const memSize = d.memtable_size_bytes || 0;
+    const memPct = Math.min((memSize / (4*1024*1024)) * 100, 100);
+    document.getElementById('memBar').style.width = memPct + '%';
+    setVal('memSizeVal', formatBytes(memSize));
+    document.getElementById('memSizeLabel').textContent = 'SkipList — ' + formatBytes(memSize);
+
+    // flow
+    document.getElementById('sstCountLabel').textContent = d.sstable_count + ' files';
+    document.getElementById('compactLabel').textContent = d.total_compactions + ' runs';
+
+    if (wrFlash) {
+      flashNode('flow-wal');
+      setTimeout(() => flashNode('flow-mem'), 100);
+    }
+
+  } catch(e) {
+    document.getElementById('statusDot').className = 'status-dot offline';
+    document.getElementById('statusLabel').textContent = 'OFFLINE — start server on :8080';
+  }
+}
+
+function flashNode(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.add('active');
+  setTimeout(() => el.classList.remove('active'), 500);
+}
+
+// ── OPERATIONS ──
+async function doPut() {
+  const key = document.getElementById('opKey').value.trim();
+  const value = document.getElementById('opValue').value.trim();
+  if (!key || !value) { showResult('key and value required', true); return; }
+  try {
+    const res = await fetch(`${BASE}/put?key=${encodeURIComponent(key)}&value=${encodeURIComponent(value)}`, { method: 'POST' });
+    const d = await res.json();
+    showResult(`PUT ${key} = ${value}`, false);
+    addLog(`PUT "${key}" → "${value}"`, 'ok');
+    flashNode('flow-client');
+  } catch(e) {
+    showResult('error: ' + e.message, true);
+    addLog('PUT failed: ' + e.message, 'err');
+  }
+}
+
+async function doGet() {
+  const key = document.getElementById('opKey').value.trim();
+  if (!key) { showResult('key required', true); return; }
+  try {
+    const res = await fetch(`${BASE}/get?key=${encodeURIComponent(key)}`);
+    if (!res.ok) {
+      showResult(`key "${key}" not found`, true);
+      addLog(`GET "${key}" → not found`, 'warn');
+      return;
+    }
+    const d = await res.json();
+    showResult(`"${key}" = "${d.value}"`, false);
+    addLog(`GET "${key}" → "${d.value}"`, 'info');
+  } catch(e) {
+    showResult('error: ' + e.message, true);
+  }
+}
+
+async function doDelete() {
+  const key = document.getElementById('opKey').value.trim();
+  if (!key) { showResult('key required', true); return; }
+  try {
+    const res = await fetch(`${BASE}/delete?key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+    showResult(`deleted "${key}"`, false);
+    addLog(`DELETE "${key}"`, 'warn');
+  } catch(e) {
+    showResult('error: ' + e.message, true);
+  }
+}
+
+function showResult(msg, isError) {
+  const box = document.getElementById('opResult');
+  box.textContent = msg;
+  box.className = 'result-box ' + (isError ? 'error' : 'success');
+}
+
+// ── BENCHMARK ──
+async function runBenchmark() {
+  const btn = document.getElementById('benchBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running...';
+  addLog('Benchmark started (1000 ops each)', 'info');
+
+  try {
+    const res = await fetch(BASE + '/benchmark');
+    const d = await res.json();
+
+    const cw = d.chronolog_write.avg_latency_us;
+    const cr = d.chronolog_read.avg_latency_us;
+    const mw = d.map_write.avg_latency_us;
+    const mr = d.map_read.avg_latency_us;
+
+    const maxW = Math.max(cw, mw, 0.001);
+    const maxR = Math.max(cr, mr, 0.001);
+
+    setVal('cwVal', cw.toFixed(2));
+    setVal('mwVal', mw.toFixed(2));
+    setVal('crVal', cr.toFixed(2));
+    setVal('mrVal', mr.toFixed(2));
+
+    document.getElementById('cwBar').style.width = Math.min((cw/maxW)*100, 100) + '%';
+    document.getElementById('mwBar').style.width = Math.min((mw/maxW)*100, 100) + '%';
+    document.getElementById('crBar').style.width = Math.min((cr/maxR)*100, 100) + '%';
+    document.getElementById('mrBar').style.width = Math.min((mr/maxR)*100, 100) + '%';
+
+    const summary = document.getElementById('benchSummary');
+    summary.innerHTML = [
+      d.summary.chronolog_write_format,
+      d.summary.chronolog_read_format,
+      d.summary.map_write_format,
+      d.summary.map_read_format
+    ].map(l => `<div style="padding:2px 0;border-bottom:1px solid rgba(26,42,74,0.4)">${l}</div>`).join('');
+
+    addLog('Benchmark complete', 'ok');
+    addLog(`ChronoLog write: ${cw.toFixed(2)}µs | Map write: ${mw.toFixed(2)}µs`, 'info');
+    addLog(`ChronoLog read: ${cr.toFixed(2)}µs | Map read: ${mr.toFixed(2)}µs`, 'info');
+
+  } catch(e) {
+    addLog('Benchmark failed: ' + e.message, 'err');
+  }
+
+  btn.disabled = false;
+  btn.textContent = '▶ Run Benchmark (1000 ops)';
+}
+
+// ── ENTER KEY ──
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const active = document.activeElement;
+    if (active.id === 'opKey' || active.id === 'opValue') doPut();
+  }
+});
+
+// ── INIT ──
+addLog('Dashboard initialized', 'info');
+addLog('Connecting to ChronoLog server...', 'info');
+fetchMetrics();
+setInterval(fetchMetrics, 1500);
+drawChart();
+window.addEventListener('resize', drawChart);
+</script>
+</body>
+</html>
